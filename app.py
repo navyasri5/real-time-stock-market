@@ -366,6 +366,7 @@ with st.sidebar:
         <div class="brand-logo">S</div><br>
         <div class="brand-name">StockSaathi</div>
         <div class="brand-tag">Indian Market Intelligence</div>
+        <div class="brand-tag">It is an educational tool only, nothing here promotes or constitutes financial advices</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -388,7 +389,7 @@ with st.sidebar:
         <div style="font-size:0.60rem;color:#3A4A60;letter-spacing:0.12em;
                     text-transform:uppercase;margin-bottom:0.3rem;">Developed by</div>
         <div style="font-family:'Space Grotesk',sans-serif;font-size:1.05rem;
-                    font-weight:700;color:#F0B429;letter-spacing:0.04em;">Navya</div>
+                    font-weight:700;color:#F0B429;letter-spacing:0.04em;">Sai Navya Sri Korupalli</div>
     </div>
     """, unsafe_allow_html=True)
 
