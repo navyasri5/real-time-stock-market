@@ -1,0 +1,20 @@
+{
+  "ADANIENT.NS": {
+    "company": "Adani Enterprises",
+    "qty": 10,
+    "buy_price": 100.0,
+    "added_on": "2026-04-27"
+  },
+  "APOLLOHOSP.NS": {
+    "company": "Apollo Hospitals",
+    "qty": 5,
+    "buy_price": 100.0,
+    "added_on": "2026-04-27"
+  },
+  "AXISBANK.NS": {
+    "company": "Axis Bank",
+    "qty": 6,
+    "buy_price": 100.0,
+    "added_on": "2026-04-27"
+  }
+}
