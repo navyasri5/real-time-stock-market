@@ -79,7 +79,7 @@ COMPANY_NAMES = {
 
 # ─── DATA FETCHERS ────────────────────────────────────────────────────────────
 
-def fetch_stock_data(symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
+def fetch_stock_data(symbol: str, period: str = "3y", interval: str = "1d") -> pd.DataFrame:
     """Download OHLCV data for a symbol and add technical indicators."""
     try:
         ticker = yf.Ticker(symbol)
