@@ -16,7 +16,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, classification_report
 import joblib
@@ -54,34 +55,93 @@ def prepare_features(df: pd.DataFrame) -> tuple:
 # ─── TRAINING ────────────────────────────────────────────────────────────────
 
 def train_model(df: pd.DataFrame) -> dict:
-    """Train GradientBoosting classifier. Returns model artifacts."""
-    X, y, features = prepare_features(df)
-    if len(X) < 60:
-        return {"error": "Not enough data (need at least 60 rows after feature prep)."}
+    """
+    Train GradientBoosting classifier with time-series cross-validation.
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, shuffle=False
+    Why CV instead of one train_test_split:
+    A single chronological 80/20 split evaluates the model on one
+    contiguous block of days (often <40 rows for 6mo of data). That
+    block can be an unrepresentative regime (e.g. a sharp trend the
+    model never saw in training), producing wildly noisy accuracy
+    numbers. TimeSeriesSplit instead evaluates across several
+    chronological folds and averages the result, giving a far more
+    honest estimate of how the model performs out-of-sample.
+    """
+    X, y, features = prepare_features(df)
+    if len(X) < 150:
+        return {"error": "Not enough data (need at least 150 rows after feature prep — "
+                          "select a longer period, e.g. 2y or 3y)."}
+
+    # Guard against a degenerate label distribution (e.g. a stock that only
+    # ever goes one direction in the sample) which would make any accuracy
+    # number meaningless.
+    class_counts = y.value_counts(normalize=True)
+    if class_counts.min() < 0.25:
+        return {"error": f"Target classes are too imbalanced ({class_counts.to_dict()}); "
+                          f"predictions would not be meaningful. Try a different stock or period."}
+
+    n_splits = 5
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    fold_accs, fold_reports = [], []
+
+    model_params = dict(
+        n_estimators=100, max_depth=2, learning_rate=0.03,
+        subsample=0.8, random_state=42
     )
+
+    for train_idx, test_idx in tscv.split(X):
+        X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
+        y_tr, y_te = y.iloc[train_idx], y.iloc[test_idx]
+
+        fold_scaler = StandardScaler()
+        X_tr_s = fold_scaler.fit_transform(X_tr)
+        X_te_s = fold_scaler.transform(X_te)
+
+        fold_model = GradientBoostingClassifier(**model_params)
+        fold_model.fit(X_tr_s, y_tr)
+
+        y_pred = fold_model.predict(X_te_s)
+        fold_accs.append(accuracy_score(y_te, y_pred))
+        fold_reports.append(classification_report(y_te, y_pred, output_dict=True, zero_division=0))
+
+    cv_accuracy_mean = float(np.mean(fold_accs))
+    cv_accuracy_std = float(np.std(fold_accs))
+
+    # Final model: train on everything except the most recent block,
+    # held out as the reported test set (still chronological, still honest,
+    # but now reported alongside the CV mean so a single lucky/unlucky
+    # split isn't the only number shown).
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
     scaler = StandardScaler()
     X_train_s = scaler.fit_transform(X_train)
     X_test_s = scaler.transform(X_test)
 
-    model = GradientBoostingClassifier(
-        n_estimators=200, max_depth=4, learning_rate=0.05, random_state=42
-    )
+    model_raw = GradientBoostingClassifier(**model_params)
+    model_raw.fit(X_train_s, y_train)
+
+    # Calibrate probabilities: raw GradientBoosting predict_proba tends to be
+    # overconfident (e.g. 97% "confidence" from a model that's only ~50%
+    # accurate). Calibration on a held-out fold makes the reported confidence
+    # actually reflect how often the model is right at that confidence level.
+    model = CalibratedClassifierCV(model_raw, method="isotonic", cv=3)
     model.fit(X_train_s, y_train)
 
     y_pred = model.predict(X_test_s)
     acc = accuracy_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred, output_dict=True)
+    report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
 
     return {
-        "model": model,
+        "model": model,                     # calibrated - use for predict/predict_proba
+        "model_raw": model_raw,             # uncalibrated tree model - use for SHAP TreeExplainer
         "scaler": scaler,
         "features": features,
-        "accuracy": acc,
+        "accuracy": acc,                    # single held-out split (kept for compatibility)
         "report": report,
+        "cv_accuracy_mean": cv_accuracy_mean,   # <- use this as the headline number
+        "cv_accuracy_std": cv_accuracy_std,
+        "cv_fold_accuracies": fold_accs,
+        "n_samples": len(X),
         "X_train": X_train,
         "X_test": X_test,
         "X_train_s": X_train_s,
@@ -122,7 +182,7 @@ def get_shap_explanation(artifacts: dict, n_samples: int = 100) -> dict:
     Falls back to feature importances if SHAP fails.
     Returns fig (matplotlib) and feature importance series.
     """
-    model = artifacts["model"]
+    model = artifacts.get("model_raw", artifacts["model"])
     X_train_s = artifacts["X_train_s"]
     X_test_s = artifacts["X_test_s"]
     features = artifacts["features"]
