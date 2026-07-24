@@ -585,7 +585,7 @@ elif page == "Stock Analysis & Prediction":
         selected_co = st.selectbox("Select Company", sorted(COMPANY_NAMES.values()))
         sym = sym_map[selected_co]
     with c2:
-        period = st.selectbox("Period", ["3mo","6mo","1y","2y"], index=1)
+        period = st.selectbox("Period", ["6mo","1y","2y","3y"], index=2)
 
     with st.spinner(f"Loading {selected_co}..."):
         df = fetch_stock_data(sym, period=period)
@@ -649,7 +649,8 @@ elif page == "Stock Analysis & Prediction":
             st.error(artifacts["error"])
         else:
             pred = predict_next_day(artifacts, df)
-            acc  = artifacts["accuracy"]
+            acc      = artifacts.get("cv_accuracy_mean", artifacts["accuracy"])
+            acc_std  = artifacts.get("cv_accuracy_std", 0)
             box  = "pred-up" if pred["direction"] == "UP" else "pred-down"
             dcls = "pred-direction-up" if pred["direction"] == "UP" else "pred-direction-down"
 
@@ -663,8 +664,8 @@ elif page == "Stock Analysis & Prediction":
             with p2:
                 st.markdown(f"""<div class="metric-card" style="text-align:center;">
                     <div class="metric-label">Model Accuracy</div>
-                    <div class="metric-value">{acc*100:.1f}%</div>
-                    <div style="font-size:0.72rem;color:{MUTED};margin-top:0.2rem;">On held-out historical data</div>
+                    <div class="metric-value">{acc*100:.1f}% ± {acc_std*100:.1f}%</div>
+                    <div style="font-size:0.72rem;color:{MUTED};margin-top:0.2rem;">5-fold time-series cross-validation</div>
                 </div>""", unsafe_allow_html=True)
             with p3:
                 st.markdown(f"""<div class="metric-card" style="text-align:center;">
